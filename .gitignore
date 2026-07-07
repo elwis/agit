@@ -1,0 +1,49 @@
+# --- Byggkataloger (CMake, både host- och cross-byggen) ---
+build/
+build-*/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+CMakeScripts/
+cmake_install.cmake
+Makefile
+!cmake/*.cmake
+
+# --- Objektfiler och binärer ---
+*.o
+*.obj
+*.a
+*.so
+*.so.*
+*.dll
+*.exe
+obj/
+
+# AROS-specifika binärnamn utan filändelse (agit, lg2, hello-tls m.fl.)
+# -- lägg INTE till en generell "körbar fil"-regel här, den skulle
+#    dölja källfiler av misstag. Whitelist:ade undantag istället:
+/agit
+/lg2
+/hello-tls
+/*.rom
+
+# --- Debug/loggfiler (t.ex. hemtagna från PROGDIR:debug.log på AROS) ---
+*.log
+debug.log
+
+# --- PAT/secrets: ska ALDRIG committas ---
+.env
+*.token
+agit.config
+
+# --- Editor- och OS-skräp ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Vims lokala växlingsfiler om du redigerar direkt i repot ---
+*.un~
+Session.vim

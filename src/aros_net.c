@@ -1,11 +1,12 @@
 /*
- * aros_net.c -- se aros_net.h for oversikt.
+ * aros_net.c -- see aros_net.h for an overview.
  *
- * Sjalva socket-anropen ar identiska med de som redan bevisats
- * fungera i hello-socket.c (OpenLibrary/socket/connect/send/recv mot
- * github.com:80) -- den har filen paketerar bara samma anrop i
- * mbedTLS-kompatibel form. Ingen ny AROS-riskyta introduceras har;
- * all okand mark tacktes redan av hello-socket-testet.
+ * The socket calls themselves are identical to the ones already proven
+ * to work in hello-socket.c (OpenLibrary/socket/connect/send/recv
+ * against github.com:80) -- this file just wraps the same calls in
+ * mbedTLS-compatible form. No new AROS risk surface is introduced
+ * here; all unknown territory was already covered by the
+ * hello-socket test.
  */
 
 #include "aros_net.h"
@@ -17,16 +18,22 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <string.h>
 
 /*
- * OBS: vi lutar oss INTE mot mbedtls/net_sockets.h har for
- * MBEDTLS_ERR_NET_*-konstanterna, trots att det hade gett snyggare
- * felmeddelanden via mbedtls_strerror(). Den modulen ar avstangd
- * (MBEDTLS_NET_C, se cmake/mbedtls-user-config.h), och headerns
- * felkodsdefines kan mycket val vara inlindade i samma #ifdef --
- * ooverblickat annu. mbedtls_ssl_send_t/recv_t kraver bara "negativt
- * varde = fel", sa vanliga -1 racker helt for vart syfte.
+ * Safe to include even though MBEDTLS_NET_C is disabled: the guard
+ * "#if defined(MBEDTLS_NET_C) ... #error" sits in net_sockets.c
+ * (the implementation), NOT in net_sockets.h (which only contains the
+ * error code constants below, defined unconditionally). Verified
+ * against the mbedTLS source -- see also GitHub issue
+ * Mbed-TLS/mbedtls#1997, where the mbedTLS team confirms this is the
+ * intended path for custom BIO implementations: the SSL layer
+ * internally compares against these specific values (e.g.
+ * MBEDTLS_ERR_SSL_WANT_READ), so arbitrary error codes outside
+ * mbedTLS's own numeric range produce an unpredictable generic error
+ * instead of a handleable specific status code.
  */
+#include <mbedtls/net_sockets.h>
 
 struct Library *SocketBase = NULL;
 
@@ -53,7 +60,7 @@ int aros_net_connect(aros_net_context *ctx, const char *ip, int port)
     int fd;
 
     if (!SocketBase)
-        return -1;   /* aros_net_init() glomd */
+        return -1;   /* aros_net_init() forgotten */
 
     fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0)
@@ -81,7 +88,7 @@ int aros_net_send(void *ctx_ptr, const unsigned char *buf, size_t len)
 
     ret = send(ctx->fd, (const char *)buf, (int)len, 0);
     if (ret < 0)
-        return -1;
+        return MBEDTLS_ERR_NET_SEND_FAILED;
 
     return ret;
 }
@@ -93,9 +100,9 @@ int aros_net_recv(void *ctx_ptr, unsigned char *buf, size_t len)
 
     ret = recv(ctx->fd, (char *)buf, (int)len, 0);
     if (ret < 0)
-        return -1;
+        return MBEDTLS_ERR_NET_RECV_FAILED;
     if (ret == 0)
-        return -1;   /* motparten stangde -- ocksa ett fel for oss */
+        return MBEDTLS_ERR_NET_CONN_RESET;   /* peer closed the connection */
 
     return ret;
 }

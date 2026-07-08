@@ -1,19 +1,20 @@
 /*
- * hello-socket.c -- Steg 2a: bevisa rå TCP-konnektivitet på AROS.
+ * hello-socket.c -- Step 2a: prove raw TCP connectivity on AROS.
  *
- * Medvetet minimalt: ingen DNS (getaddrinfo har vi redan sett strular
- * pa AROS), ingen TLS. Bara OpenLibrary + socket() + connect() mot en
- * hardkodad IP. Om det har fungerar vet vi att bsdsocket.library-lagret
- * ar helt, och nasta steg (aros_net.c wrapper for mbedTLS) kan byggas
- * med tillforsikt.
+ * Deliberately minimal: no DNS (we've already seen getaddrinfo act up
+ * on AROS), no TLS. Just OpenLibrary + socket() + connect() against a
+ * hardcoded IP. If this works, we know the bsdsocket.library layer is
+ * intact, and the next step (aros_net.c wrapper for mbedTLS) can be
+ * built with confidence.
  *
- * Bygg (cross, pa Pop!_OS):
+ * Build (cross, on Pop!_OS):
  *   x86_64-aros-gcc --sysroot=$SYSROOT hello-socket.c -o hello-socket
  *
- * IP-adressen nedan ar en av GitHubs kanda webbserver-IP:n (140.82.x.x
- * -spannet). Fungerar inte den specifika adressen -- GitHub roterar
- * ibland -- byt till valfri annan server du vet svarar pa port 80,
- * t.ex. din routers IP for ett rent lokalt natverkstest forst.
+ * The IP address below is one of GitHub's known web server IPs (the
+ * 140.82.x.x range). If that specific address doesn't work -- GitHub
+ * rotates them sometimes -- swap in any other server you know answers
+ * on port 80, e.g. your router's IP, for a purely local network test
+ * first.
  */
 
 #include <proto/exec.h>
@@ -38,21 +39,21 @@ int main(void)
     struct sockaddr_in addr;
     int ret;
 
-    printf("1. Oppnar bsdsocket.library...\n");
+    printf("1. Opening bsdsocket.library...\n");
     SocketBase = OpenLibrary("bsdsocket.library", 4);
     if (!SocketBase)
     {
-        printf("   FEL: OpenLibrary misslyckades. Ar TCP/IP-stacken "
-               "(Poseidon/Miami) igang och konfigurerad?\n");
+        printf("   ERROR: OpenLibrary failed. Is the TCP/IP stack "
+               "(Poseidon/Miami) running and configured?\n");
         return 1;
     }
     printf("   OK: SocketBase = %p\n", (void *)SocketBase);
 
-    printf("2. Skapar socket (AF_INET, SOCK_STREAM)...\n");
+    printf("2. Creating socket (AF_INET, SOCK_STREAM)...\n");
     sock = socket(AF_INET, SOCK_STREAM, 0);
     if (sock < 0)
     {
-        printf("   FEL: socket() returnerade %d\n", sock);
+        printf("   ERROR: socket() returned %d\n", sock);
         CloseLibrary(SocketBase);
         return 1;
     }
@@ -63,48 +64,48 @@ int main(void)
     addr.sin_port   = htons(TEST_PORT);
     addr.sin_addr.s_addr = inet_addr(TEST_IP);
 
-    printf("3. Ansluter till %s:%d...\n", TEST_IP, TEST_PORT);
+    printf("3. Connecting to %s:%d...\n", TEST_IP, TEST_PORT);
     ret = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
     if (ret < 0)
     {
-        printf("   FEL: connect() returnerade %d\n", ret);
+        printf("   ERROR: connect() returned %d\n", ret);
         CloseSocket(sock);
         CloseLibrary(SocketBase);
         return 1;
     }
-    printf("   OK: anslutningen lyckades!\n");
+    printf("   OK: connection succeeded!\n");
 
-    printf("4. Skickar en minimal HTTP-request...\n");
+    printf("4. Sending a minimal HTTP request...\n");
     {
         static const char req[] =
             "HEAD / HTTP/1.0\r\nHost: github.com\r\n\r\n";
         ret = send(sock, req, sizeof(req) - 1, 0);
-        printf("   send() returnerade %d (skickade %d bytes)\n",
+        printf("   send() returned %d (sent %d bytes)\n",
                ret, (int)sizeof(req) - 1);
     }
 
-    printf("5. Laser svaret (forsta 200 bytes)...\n");
+    printf("5. Reading the response (first 200 bytes)...\n");
     {
         char buf[201];
         ret = recv(sock, buf, sizeof(buf) - 1, 0);
         if (ret > 0)
         {
             buf[ret] = '\0';
-            printf("   OK: fick %d bytes:\n---\n%s\n---\n", ret, buf);
+            printf("   OK: got %d bytes:\n---\n%s\n---\n", ret, buf);
         }
         else
         {
-            printf("   FEL eller inget svar: recv() = %d\n", ret);
+            printf("   ERROR or no response: recv() = %d\n", ret);
         }
     }
 
-    printf("6. Stanger.\n");
+    printf("6. Closing.\n");
     CloseSocket(sock);
     CloseLibrary(SocketBase);
 
-    printf("\nKLART. Om du sag ett HTTP-svar i steg 5 fungerar hela "
-           "TCP-kedjan (OpenLibrary, socket, connect, send, recv) pa "
-           "den har AROS-installationen.\n");
+    printf("\nDONE. If you saw an HTTP response in step 5, the entire "
+           "TCP chain (OpenLibrary, socket, connect, send, recv) works "
+           "on this AROS installation.\n");
 
     return 0;
 }

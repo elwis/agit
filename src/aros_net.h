@@ -1,15 +1,15 @@
 /*
- * aros_net.h -- AROS bsdsocket.library-wrapper for mbedTLS.
+ * aros_net.h -- AROS bsdsocket.library wrapper for mbedTLS.
  *
- * mbedTLS karnbibliotek (ssl_tls.c m.fl.) ar transportagnostiskt:
- * det pratar aldrig direkt med sockets, utan anropar de tre
- * funktionspekare man registrerar via mbedtls_ssl_set_bio(). Den har
- * filen implementerar de tre pekarna ovanpa bsdsocket.library,
- * eftersom mbedTLS egen net_sockets.c ar avstangd (se
- * cmake/mbedtls-user-config.h -- Unix/Windows-only-antaganden och
- * AROS avvikande setsockopt/getaddrinfo-signaturer).
+ * The mbedTLS core library (ssl_tls.c et al.) is transport-agnostic:
+ * it never talks directly to sockets, but instead calls the three
+ * function pointers you register via mbedtls_ssl_set_bio(). This file
+ * implements those three pointers on top of bsdsocket.library, since
+ * mbedTLS's own net_sockets.c is disabled (see
+ * cmake/mbedtls-user-config.h -- Unix/Windows-only assumptions and
+ * AROS's deviating setsockopt/getaddrinfo signatures).
  *
- * Anvandning (se hello-tls.c):
+ * Usage (see hello-tls.c):
  *   aros_net_context ctx;
  *   aros_net_init();
  *   aros_net_connect(&ctx, "140.82.121.3", 443);
@@ -30,43 +30,42 @@ typedef struct
 } aros_net_context;
 
 /*
- * Oppnar bsdsocket.library. Maste anropas EN gang innan nagon
- * aros_net_connect(). Returnerar 0 vid lyckat, -1 annars.
+ * Opens bsdsocket.library. Must be called ONCE before any
+ * aros_net_connect(). Returns 0 on success, -1 otherwise.
  */
 int aros_net_init(void);
 
 /*
- * Stanger bsdsocket.library. Anropas nar programmet ar helt klart
- * med allt natverk.
+ * Closes bsdsocket.library. Called when the program is completely
+ * done with all networking.
  */
 void aros_net_shutdown(void);
 
 /*
- * Oppnar en TCP-anslutning till ip:port. OBS: ip maste vara en
- * dotted-quad-strang ("140.82.121.3"), INTE ett vardnamn --
- * getaddrinfo() har visat sig krava samma Miami-bas-anropskonvention
- * som inet_pton gjorde (se cmake/mbedtls-user-config.h), och
- * namnuppslagning ar darfor ett separat, annu olost delproblem.
+ * Opens a TCP connection to ip:port. NOTE: ip must be a dotted-quad
+ * string ("140.82.121.3"), NOT a hostname -- getaddrinfo() has turned
+ * out to require the same Miami-base calling convention that
+ * inet_pton did (see cmake/mbedtls-user-config.h), so name resolution
+ * is therefore a separate, still-unsolved sub-problem.
  *
- * Returnerar 0 vid lyckad anslutning, -1 vid fel.
+ * Returns 0 on successful connection, -1 on error.
  */
 int aros_net_connect(aros_net_context *ctx, const char *ip, int port);
 
 /*
- * mbedtls_ssl_send_t / mbedtls_ssl_recv_t -kompatibla callbacks.
- * Registreras direkt via mbedtls_ssl_set_bio(&ssl, ctx, aros_net_send,
+ * mbedtls_ssl_send_t / mbedtls_ssl_recv_t -compatible callbacks.
+ * Registered directly via mbedtls_ssl_set_bio(&ssl, ctx, aros_net_send,
  * aros_net_recv, NULL).
  *
- * Returnerar antal bytes skickade/lasta, eller ett negativt
- * MBEDTLS_ERR_NET_*-felkod vid fel (se aros_net.c).
+ * Returns the number of bytes sent/read, or a negative
+ * MBEDTLS_ERR_NET_* error code on failure (see aros_net.c).
  */
 int aros_net_send(void *ctx, const unsigned char *buf, size_t len);
 int aros_net_recv(void *ctx, unsigned char *buf, size_t len);
 
 /*
- * Stanger en enskild anslutning (men inte biblioteket sjalvt --
- * anvand aros_net_shutdown() for det, en gang, i slutet av
- * programmet).
+ * Closes a single connection (but not the library itself -- use
+ * aros_net_shutdown() for that, once, at the end of the program).
  */
 void aros_net_close(aros_net_context *ctx);
 

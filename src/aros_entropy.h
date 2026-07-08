@@ -1,23 +1,23 @@
 /*
- * aros_entropy.h -- entropikalla for mbedTLS pa AROS.
+ * aros_entropy.h -- entropy source for mbedTLS on AROS.
  *
- * AROS har ingen /dev/urandom (darav MBEDTLS_NO_PLATFORM_ENTROPY i
- * cmake/mbedtls-user-config.h). Den har filen ger mbedTLS en egen
- * entropikalla via mbedtls_entropy_add_source().
+ * AROS has no /dev/urandom (hence MBEDTLS_NO_PLATFORM_ENTROPY in
+ * cmake/mbedtls-user-config.h). This file gives mbedTLS its own
+ * entropy source via mbedtls_entropy_add_source().
  *
- * Strategi: kolla CPUID vid korning (INTE kompileringstid -- samma
- * binar ska fungera pa vilken AROS x86_64-maskin som helst, inte bara
- * den dator den byggdes pa). Finns RDRAND (Ivy Bridge, 2012, och
- * senare) anvands den som riktig hardvaruentropi. Saknas den (t.ex.
- * elwis nuvarande ASUS P8Z68-V LX med i5-2400, Sandy Bridge 2011 --
- * en hel generation for tidig for RDRAND) faller vi tillbaka pa en
- * svag mjukvarukalla.
+ * Strategy: check CPUID at runtime (NOT compile time -- the same
+ * binary should work on any AROS x86_64 machine, not just the one it
+ * was built on). If RDRAND is present (Ivy Bridge, 2012, and later)
+ * it's used as real hardware entropy. If it's missing (like mine
+ * current ASUS P8Z68-V LX with an i5-2400, Sandy Bridge 2011 -- a
+ * whole generation too early for RDRAND) we fall back to a weak
+ * software source.
  *
- * ARLIGT VARNING: fallback-kallan (systemklocka + stackadress +
- * raknare) ar INTE kryptografiskt stark. Den racker for att gora
- * TLS-sessionsnycklar oforutsagbara mot passiv naverksavlyssning i
- * ett hobbyprojekt -- den skyddar inte mot en malmedveten motstandare
- * som forsoker aterskapa entropikallan. Se README TODO.
+ * HONEST WARNING: the fallback source (system clock + stack address +
+ * counter) is NOT cryptographically strong. It's enough to make TLS
+ * session keys unpredictable against passive network eavesdropping in
+ * a hobby project -- it does not protect against a determined
+ * adversary trying to reconstruct the entropy source. See README TODO.
  */
 
 #ifndef AROS_ENTROPY_H
@@ -26,24 +26,24 @@
 #include <stddef.h>
 
 /*
- * Returnerar 1 om CPU:n (vid korning, via CPUID) stodjer RDRAND,
- * annars 0. Anvands mest for loggning/diagnostik -- sjalva
- * aros_entropy_source() kollar redan detta internt.
+ * Returns 1 if the CPU (at runtime, via CPUID) supports RDRAND,
+ * otherwise 0. Mostly used for logging/diagnostics -- the actual
+ * aros_entropy_source() already checks this internally.
  */
 int aros_entropy_has_rdrand(void);
 
 /*
- * mbedtls_entropy_f_source_ptr-kompatibel callback. Registreras via:
- *
- *   mbedtls_entropy_add_source(&entropy, aros_entropy_source, NULL,
- *       32, MBEDTLS_ENTROPY_SOURCE_STRONG);
- *
- * (threshold 32 bytes racker for var enda anropsstorlek mbedTLS
- * begar; STRONG-flaggan ar en vit lognod har -- vi begar den fran
- * mbedTLS eftersom det ar var enda kalla, men se arlighetsvarningen
- * ovan om vad "stark" faktiskt betyder pa maskiner utan RDRAND.)
+ * mbedtls_entropy_f_source_ptr-compatible callback -- but note the
+ * name. When MBEDTLS_ENTROPY_HARDWARE_ALT is set (see
+ * cmake/mbedtls-user-config.h), mbedTLS requires this EXACT function
+ * name and wires it automatically into every mbedtls_entropy_context
+ * the library ever creates, including PSA crypto's internal hidden
+ * context. This is different from mbedtls_entropy_add_source(),
+ * which only registers a source on a context YOU explicitly created
+ * and doesn't reach PSA's internal one -- that mismatch is what
+ * caused the earlier PSA_ERROR_INSUFFICIENT_ENTROPY (-148).
  */
-int aros_entropy_source(void *data, unsigned char *output, size_t len,
-                        size_t *olen);
+int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len,
+                          size_t *olen);
 
 #endif /* AROS_ENTROPY_H */

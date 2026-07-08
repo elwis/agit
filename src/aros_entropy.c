@@ -1,6 +1,6 @@
 /*
- * aros_entropy.c -- se aros_entropy.h for oversikt och arlighets-
- * varning om fallback-kallans styrka.
+ * aros_entropy.c -- see aros_entropy.h for an overview and an honest
+ * warning about the strength of the fallback source.
  */
 
 #include "aros_entropy.h"
@@ -17,16 +17,16 @@ int aros_entropy_has_rdrand(void)
     if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
         return 0;
 
-    /* RDRAND = bit 30 i ECX, CPUID-leaf 1. Ivy Bridge (2012) och
-     * senare. Elwis nuvarande AROS-maskin (i5-2400, Sandy Bridge,
-     * 2011) saknar detta -- en hel generation for tidig. */
+    /* RDRAND = bit 30 in ECX, CPUID leaf 1. Ivy Bridge (2012) and
+     * later. My AROS machine (i5-2400, Sandy Bridge,
+     * 2011) lacks this -- a whole generation too early. */
     return (ecx & (1u << 30)) ? 1 : 0;
 }
 
 /*
- * En enda RDRAND-instruktion kan misslyckas aven pa CPU:er som
- * stodjer den (delad entropikalla mellan alla karnor). Intels
- * dokumentation rekommenderar upp till 10 forsok innan man ger upp.
+ * A single RDRAND instruction can fail even on CPUs that support it
+ * (entropy source shared between all cores). Intel's documentation
+ * recommends up to 10 retries before giving up.
  */
 static int rdrand64(uint64_t *out)
 {
@@ -44,12 +44,12 @@ static int rdrand64(uint64_t *out)
 }
 
 /*
- * SVAG fallback -- se arlighetsvarningen i aros_entropy.h. Blandar
- * systemklocka, en stackadress (ASLR/korningsspecifik pa de flesta
- * moderna OS, men AROS har troligen ingen ASLR -- varde begransat)
- * och en statisk raknare genom en enkel PCG-liknande LCG. Racker for
- * att gora TLS-sessionsnycklar ovanliga i praktiken, INTE for att
- * sta emot en malmedveten motstandare.
+ * WEAK fallback -- see the honesty warning in aros_entropy.h. Mixes
+ * the system clock, a stack address (ASLR/run-specific on most modern
+ * OSes, but AROS likely has no ASLR -- limited value) and a static
+ * counter through a simple PCG-like LCG. Enough to make TLS session
+ * keys unpredictable in practice, NOT enough to withstand a
+ * determined adversary.
  */
 static void weak_fill(unsigned char *output, size_t len)
 {
@@ -61,18 +61,18 @@ static void weak_fill(unsigned char *output, size_t len)
     counter++;
     state  = (uint64_t)(time_t) time(NULL);
     state ^= (uint64_t)(size_t) &stack_marker;
-    state ^= counter * 2654435761u;   /* Knuth multiplikativ hash */
+    state ^= counter * 2654435761u;   /* Knuth multiplicative hash */
 
     for (i = 0; i < len; i++)
     {
-        /* PCG-liknande LCG-konstanter (Knuth MMIX) */
+        /* PCG-like LCG constants (Knuth MMIX) */
         state = state * 6364136223846793005ULL + 1442695040888963407ULL;
         output[i] = (unsigned char)(state >> 24);
     }
 }
 
-int aros_entropy_source(void *data, unsigned char *output, size_t len,
-                        size_t *olen)
+int mbedtls_hardware_poll(void *data, unsigned char *output, size_t len,
+                          size_t *olen)
 {
     (void)data;
 
@@ -85,9 +85,9 @@ int aros_entropy_source(void *data, unsigned char *output, size_t len,
             uint64_t v;
             if (!rdrand64(&v))
             {
-                /* Ovantat: CPU:n sa ja i CPUID men RDRAND ger upp
-                 * efter 10 forsok. Fyll resten med fallback hellre
-                 * an att misslyckas helt. */
+                /* Unexpected: the CPU said yes in CPUID but RDRAND
+                 * gives up after 10 tries. Fill the rest with the
+                 * fallback rather than failing outright. */
                 weak_fill(output + i, len - i);
                 *olen = len;
                 return 0;

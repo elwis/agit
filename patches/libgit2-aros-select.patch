@@ -1,0 +1,9 @@
+diff --git a/src/util/posix.c b/src/util/posix.c
+index cfc0e0751..f36c9d054 100644
+--- a/src/util/posix.c
++++ b/src/util/posix.c
+@@ -1,3 +1,4 @@
++#include <proto/socket.h>
+ /*
+  * Copyright (C) the libgit2 contributors. All rights reserved.
+  *

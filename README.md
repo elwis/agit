@@ -38,6 +38,10 @@ code such as `aros_net.c`. That means `deps/libgit2` and
 `deps/mbedtls` can be bumped to new upstream tags without losing our
 changes or needing manual re-patching.
 
+bash# Apply AROS-specific libgit2 patches (submodule content is never
+# committed dirty -- see patches/README or the deviation table above)
+git apply patches/libgit2-aros-select.patch --directory=deps/libgit2
+
 ## License
 GPLv2 (matches libgit2's "GPLv2 with linking exception"; mbedTLS is
 Apache 2.0-licensed and compatible).

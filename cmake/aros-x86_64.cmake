@@ -23,9 +23,34 @@ set(CMAKE_CXX_COMPILER x86_64-aros-g++)
 set(CMAKE_AR           x86_64-aros-ar CACHE FILEPATH "Archiver")
 set(CMAKE_RANLIB       x86_64-aros-ranlib CACHE FILEPATH "Ranlib")
 
-# --sysroot måste med på både kompilerings- och länksteget
-set(CMAKE_C_FLAGS_INIT   "--sysroot=${AROS_SYSROOT}")
-set(CMAKE_CXX_FLAGS_INIT "--sysroot=${AROS_SYSROOT}")
+# -DMBEDTLS_NO_PLATFORM_ENTROPY och -DMBEDTLS_PLATFORM_MS_TIME_ALT
+# läggs på HÄR (inte via -DCMAKE_C_FLAGS på kommandoraden!) eftersom
+# AROS inte känns igen som "unix" av mbedTLS plattformsdetektering --
+# varken entropikällan eller mbedtls_ms_time() får en inbyggd
+# implementation, och det gäller varje projekt som byggs mot den här
+# toolchainen, inte bara mbedTLS. Vi tillhandahåller egna
+# implementationer i src/aros_port.c den dag något faktiskt LÄNKAR
+# mot de här symbolerna (mbedTLS-biblioteket i sig kompilerar fint
+# utan dem, eftersom statiska bibliotek inte kräver att alla symboler
+# är definierade förrän vid slutlänkning).
+#
+# OBS: skriv ALDRIG över CMAKE_C_FLAGS direkt via -D på
+# cmake-kommandoraden -- det klonar bort --sysroot härifrån eftersom
+# _INIT-varianten bara används om CMAKE_C_FLAGS är osatt. Vill du
+# lägga till EGNA flaggor, gör det i CMakeLists.txt eller via
+# target_compile_definitions().
+# AROS-specifika mbedTLS-avvikelser (se cmake/mbedtls-user-config.h):
+# vissa standardpåslagna moduler (t.ex. MBEDTLS_TIMING_C) går inte att
+# släcka via en enkel -U på kommandoraden eftersom mbedtls_config.h
+# defines dem ovillkorligt -- mbedTLS egen lösning för det är en
+# "user config"-header som inkluderas EFTER standardkonfigurationen
+# och tillåts #undef:a saker. CMAKE_CURRENT_LIST_DIR pekar på samma
+# katalog som den här toolchainfilen ligger i, oavsett varifrån
+# projektet checkats ut.
+set(AROS_MBEDTLS_USER_CONFIG_DIR "${CMAKE_CURRENT_LIST_DIR}")
+
+set(CMAKE_C_FLAGS_INIT   "--sysroot=${AROS_SYSROOT} -DMBEDTLS_NO_PLATFORM_ENTROPY -DMBEDTLS_PLATFORM_MS_TIME_ALT -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls-user-config.h\" -I${AROS_MBEDTLS_USER_CONFIG_DIR}")
+set(CMAKE_CXX_FLAGS_INIT "--sysroot=${AROS_SYSROOT} -DMBEDTLS_NO_PLATFORM_ENTROPY -DMBEDTLS_PLATFORM_MS_TIME_ALT -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls-user-config.h\" -I${AROS_MBEDTLS_USER_CONFIG_DIR}")
 set(CMAKE_EXE_LINKER_FLAGS_INIT    "--sysroot=${AROS_SYSROOT}")
 set(CMAKE_SHARED_LINKER_FLAGS_INIT "--sysroot=${AROS_SYSROOT}")
 

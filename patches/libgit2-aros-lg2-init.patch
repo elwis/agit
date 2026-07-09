@@ -1,0 +1,61 @@
+diff --git a/examples/lg2.c b/examples/lg2.c
+index 7946bc215..8d4617694 100644
+--- a/examples/lg2.c
++++ b/examples/lg2.c
+@@ -1,5 +1,9 @@
+ #include "common.h"
+ 
++#ifdef __AROS__
++#include "aros_net.h"
++#endif
++
+ /* This part is not strictly libgit2-dependent, but you can use this
+  * as a starting point for a git-like tool */
+ 
+@@ -76,8 +80,36 @@ int main(int argc, char **argv)
+ 	if (argc < 2)
+ 		usage(argv[0]);
+ 
++#ifdef __AROS__
++	/*
++	 * bsdsocket.library must be open (SocketBase set) before any
++	 * git_socket_stream or gethostbyname()-based DNS call runs --
++	 * see src/aros_net.c and src/aros_dns.c. libgit2 itself never
++	 * does this (no other supported platform needs it), so it's
++	 * done here, once, for the whole lifetime of the process.
++	 */
++	if (aros_net_init() != 0) {
++		fprintf(stderr, "Unable to open bsdsocket.library\n");
++		return 1;
++	}
++#endif
++
+ 	git_libgit2_init();
+ 
++#ifdef __AROS__
++	/*
++	 * GIT_DEFAULT_CERT_LOCATION (streams/mbedtls.c) is baked in at
++	 * compile time from CMake's CERT_LOCATION, which defaults to a
++	 * path on the BUILD machine (e.g. Pop!_OS's
++	 * /usr/lib/ssl/certs/ca-certificates.crt) -- meaningless on the
++	 * AROS target and silently skipped (stat() just fails), leaving
++	 * no CA chain loaded at all. Point it explicitly at the bundle
++	 * agit ships next to the binary (see README.md/docs/Building.md
++	 * "Fetch the CA certificate bundle").
++	 */
++	git_libgit2_opts(GIT_OPT_SET_SSL_CERT_LOCATIONS, "PROGDIR:cacert.pem", NULL);
++#endif
++
+ 	for (args.pos = 1; args.pos < args.argc; ++args.pos) {
+ 		char *a = args.argv[args.pos];
+ 
+@@ -120,5 +152,9 @@ shutdown:
+ 	git_repository_free(repo);
+ 	git_libgit2_shutdown();
+ 
++#ifdef __AROS__
++	aros_net_shutdown();
++#endif
++
+ 	return return_code;
+ }

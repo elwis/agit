@@ -1,0 +1,28 @@
+diff --git a/examples/CMakeLists.txt b/examples/CMakeLists.txt
+index 986daae59..f1727d8a7 100644
+--- a/examples/CMakeLists.txt
++++ b/examples/CMakeLists.txt
+@@ -2,6 +2,23 @@
+ 
+ file(GLOB SRC_EXAMPLES *.c *.h)
+ 
++# AROS has no bsdsocket.library init, DNS resolver, entropy source,
++# millisecond clock, mmap(), or a handful of other POSIX bits libgit2
++# assumes -- agit's glue code for all of that lives outside the
++# libgit2 tree entirely (see ../src, ../README.md) and is linked
++# directly into this example binary rather than into libgit2.a itself,
++# same principle as never patching vendor code in place.
++if(CMAKE_SYSTEM_NAME STREQUAL "AROS")
++	list(APPEND SRC_EXAMPLES
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_net.c
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_dns.c
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_entropy.c
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_time.c
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_mman.c
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_posix_shims.c
++	)
++endif()
++
+ add_executable(lg2 ${SRC_EXAMPLES})
+ 
+ # Ensure that we do not use deprecated functions internally

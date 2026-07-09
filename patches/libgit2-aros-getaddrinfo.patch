@@ -1,0 +1,15 @@
+diff --git a/src/libgit2/streams/socket.c b/src/libgit2/streams/socket.c
+index d064f867e..b851e7eed 100644
+--- a/src/libgit2/streams/socket.c
++++ b/src/libgit2/streams/socket.c
+@@ -12,6 +12,10 @@
+ #include "runtime.h"
+ #include "stream.h"
+ 
++#ifdef __AROS__
++#include "aros_dns.h"
++#endif
++
+ #ifndef _WIN32
+ # include <sys/types.h>
+ # include <sys/socket.h>

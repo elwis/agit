@@ -1,0 +1,15 @@
+diff --git a/src/util/posix.h b/src/util/posix.h
+index 74707453a..f049b02e1 100644
+--- a/src/util/posix.h
++++ b/src/util/posix.h
+@@ -13,6 +13,10 @@
+ #include <fcntl.h>
+ #include <time.h>
+ 
++#ifdef __AROS__
++#include "aros_posix_shims.h"
++#endif
++
+ /* stat: file mode type testing macros */
+ #ifndef S_IFGITLINK
+ #define S_IFGITLINK 0160000

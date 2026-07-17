@@ -1,0 +1,15 @@
+diff --git a/src/util/unix/realpath.c b/src/util/unix/realpath.c
+index 2565e2e83..b87117b37 100644
+--- a/src/util/unix/realpath.c
++++ b/src/util/unix/realpath.c
+@@ -14,6 +14,10 @@
+ #include <fcntl.h>
+ #include <unistd.h>
+ 
++#ifdef __AROS__
++#include "aros_realpath.h"
++#endif
++
+ char *p_realpath(const char *pathname, char *resolved)
+ {
+ 	char *result;

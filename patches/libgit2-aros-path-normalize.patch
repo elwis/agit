@@ -1,0 +1,150 @@
+diff --git a/src/util/fs_path.c b/src/util/fs_path.c
+index 5b00b1b40..bce828a73 100644
+--- a/src/util/fs_path.c
++++ b/src/util/fs_path.c
+@@ -1178,7 +1178,7 @@ int git_fs_path_direach(
+ 
+ 	wd_len = git_str_len(path);
+ 
+-	if ((dir = opendir(path->ptr)) == NULL) {
++	if ((dir = p_opendir(path->ptr)) == NULL) {
+ 		git_error_set(GIT_ERROR_OS, "failed to open directory '%s'", path->ptr);
+ 		if (errno == ENOENT)
+ 			return GIT_ENOTFOUND;
+@@ -1419,7 +1419,7 @@ int git_fs_path_diriter_init(
+ 		return -1;
+ 	}
+ 
+-	if ((diriter->dir = opendir(diriter->path.ptr)) == NULL) {
++	if ((diriter->dir = p_opendir(diriter->path.ptr)) == NULL) {
+ 		git_str_dispose(&diriter->path);
+ 
+ 		git_error_set(GIT_ERROR_OS, "failed to open directory '%s'", path);
+diff --git a/src/util/posix.c b/src/util/posix.c
+index f36c9d054..ec233da1b 100644
+--- a/src/util/posix.c
++++ b/src/util/posix.c
+@@ -12,6 +12,10 @@
+ #include <stdio.h>
+ #include <ctype.h>
+ 
++#ifdef __AROS__
++#include "aros_path_shims.h"
++#endif
++
+ size_t p_fsync__cnt = 0;
+ 
+ #ifndef GIT_WIN32
+@@ -110,6 +114,10 @@ int p_open(const char *path, volatile int flags, ...)
+ {
+ 	mode_t mode = 0;
+ 
++	#ifdef __AROS__
++	path = aros_strip_dotslash(path);
++	#endif
++
+ 	#ifdef GIT_DEBUG_STRICT_OPEN
+ 	if (strstr(path, "//") != NULL) {
+ 		errno = EACCES;
+@@ -130,6 +138,10 @@ int p_open(const char *path, volatile int flags, ...)
+ 
+ int p_creat(const char *path, mode_t mode)
+ {
++	#ifdef __AROS__
++	path = aros_strip_dotslash(path);
++	#endif
++
+ 	return open(path, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY | O_CLOEXEC, mode);
+ }
+ 
+@@ -153,6 +165,11 @@ int p_getcwd(char *buffer_out, size_t size)
+ 
+ int p_rename(const char *from, const char *to)
+ {
++	#ifdef __AROS__
++	from = aros_strip_dotslash(from);
++	to = aros_strip_dotslash(to);
++	#endif
++
+ 	if (!link(from, to)) {
+ 		p_unlink(from);
+ 		return 0;
+diff --git a/src/util/unix/posix.h b/src/util/unix/posix.h
+index 60f27d3d3..33bfdfb6c 100644
+--- a/src/util/unix/posix.h
++++ b/src/util/unix/posix.h
+@@ -42,6 +42,7 @@ typedef int GIT_SOCKET;
+ #define p_link(o,n) link(o, n)
+ #define p_unlink(p) unlink(p)
+ #define p_mkdir(p,m) mkdir(p, m)
++#define p_opendir(p) opendir(p)
+ extern char *p_realpath(const char *, char *);
+ 
+ GIT_INLINE(int) p_fsync(int fd)
+@@ -99,4 +100,54 @@ GIT_INLINE(int) p_futimes(int f, const struct p_timeval t[2])
+ #define p_pread(f, d, s, o) pread(f, d, s, o)
+ #define p_pwrite(f, d, s, o) pwrite(f, d, s, o)
+ 
++#ifdef __AROS__
++#include "aros_path_shims.h"
++
++/*
++ * AROS's Unix->AmigaDOS path translation is not active for this
++ * project's cross-compiled binaries (confirmed empirically: a bare
++ * mkdir("./name", ...) fails with ENOENT on real hardware) -- every
++ * one of these macros reaches AmigaDOS's native path parser directly,
++ * which has no "./" concept at all. Strip it here, once, for all of
++ * them, rather than trusting every call site (libgit2's or agit's own,
++ * present or future) to never construct a "./"-prefixed path -- see
++ * doc/Building.md's "AROS's broken realpath()" section.
++ *
++ * Strip-only, no further normalization: a fully-stripped result (""
++ * or a lone ".") is passed straight through as "." here, unlike
++ * aros_realpath()'s Lock()-specific "" substitution -- that idiom is
++ * verified only for Lock(), not for these calls (see
++ * aros_path_shims.h).
++ */
++#undef p_lstat
++#undef p_stat
++#undef p_mkdir
++#undef p_unlink
++#undef p_rmdir
++#undef p_access
++#undef p_chdir
++#undef p_readlink
++#undef p_symlink
++#undef p_link
++#undef p_chmod
++#undef p_utimes
++#undef p_lstat_posixly
++#undef p_opendir
++
++#define p_lstat(p,b) lstat(aros_strip_dotslash(p), b)
++#define p_stat(p,b) stat(aros_strip_dotslash(p), b)
++#define p_mkdir(p,m) mkdir(aros_strip_dotslash(p), m)
++#define p_unlink(p) unlink(aros_strip_dotslash(p))
++#define p_rmdir(p) rmdir(aros_strip_dotslash(p))
++#define p_access(p,m) access(aros_strip_dotslash(p), m)
++#define p_chdir(p) chdir(aros_strip_dotslash(p))
++#define p_readlink(a,b,c) readlink(aros_strip_dotslash(a), b, c)
++#define p_symlink(o,n) symlink(o, aros_strip_dotslash(n))
++#define p_link(o,n) link(aros_strip_dotslash(o), aros_strip_dotslash(n))
++#define p_chmod(p,m) chmod(aros_strip_dotslash(p), m)
++#define p_utimes(f,t) utimes(aros_strip_dotslash(f), t)
++#define p_lstat_posixly(p,b) lstat(aros_strip_dotslash(p), b)
++#define p_opendir(p) opendir(aros_strip_dotslash(p))
++#endif /* __AROS__ */
++
+ #endif
+diff --git a/src/util/win32/posix.h b/src/util/win32/posix.h
+index 03fa2ac52..b372183a0 100644
+--- a/src/util/win32/posix.h
++++ b/src/util/win32/posix.h
+@@ -33,6 +33,7 @@ extern int p_symlink(const char *old, const char *new);
+ extern int p_link(const char *old, const char *new);
+ extern int p_unlink(const char *path);
+ extern int p_mkdir(const char *path, mode_t mode);
++#define p_opendir(p) opendir(p)
+ extern int p_fsync(int fd);
+ extern char *p_realpath(const char *orig_path, char *buffer);
+ 

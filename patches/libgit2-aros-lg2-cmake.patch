@@ -1,8 +1,8 @@
 diff --git a/examples/CMakeLists.txt b/examples/CMakeLists.txt
-index 986daae59..f1727d8a7 100644
+index 986daae59..adcee0d17 100644
 --- a/examples/CMakeLists.txt
 +++ b/examples/CMakeLists.txt
-@@ -2,6 +2,23 @@
+@@ -2,6 +2,25 @@
  
  file(GLOB SRC_EXAMPLES *.c *.h)
  
@@ -20,6 +20,8 @@ index 986daae59..f1727d8a7 100644
 +		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_time.c
 +		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_mman.c
 +		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_posix_shims.c
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_realpath.c
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_path_shims.c
 +	)
 +endif()
 +

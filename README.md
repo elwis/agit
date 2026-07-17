@@ -13,8 +13,20 @@ proven working on AROS One/VirtualBox. `lg2` (libgit2's own example
 CLI) cross-compiles and links into a real AROS ELF executable against
 our `libgit2.a`, with real hostname-based DNS (`gethostbyname()`-backed
 `getaddrinfo()`, IPv4-only) wired in -- see `doc/Building.md` for the
-full architecture writeup. **Not yet verified**: an actual `lg2 clone`
-run on AROS hardware/VM (this project cross-compiles only; on-device
+full architecture writeup. On-device testing surfaced two related but
+distinct bugs breaking `lg2 init`/`lg2 clone`'s directory setup: a
+broken AROS `realpath()` (every input, including `.`, returned
+`ENOENT`), fixed with a `Lock()`/`NameFromLock()`-based replacement
+(`src/aros_realpath.c`); and, confirmed empirically afterward, AROS's
+Unix->AmigaDOS `./`-path translation not being active for this
+project's binaries at all, meaning `mkdir()`/`open()`/`stat()`/etc.
+also choke on a bare `./name` -- fixed by stripping the prefix at
+libgit2's own `p_mkdir`/`p_open`/etc. call layer (`src/aros_path_shims.c`,
+see `doc/Building.md`'s "AROS's broken `realpath()`" and "AROS's POSIX
+calls don't understand `./` either"). Both fixes are cross-compile and
+isolated-test verified, not yet re-confirmed on-device. **Not yet
+verified**: an actual `lg2 clone`/`lg2 init` run on AROS hardware/VM
+with both fixes in place (this project cross-compiles only; on-device
 runs are a manual hand-off step -- see `doc/Building.md`'s "Testing
 lg2 on AROS"). agit's own polished frontend hasn't been started yet.
 
@@ -49,6 +61,11 @@ libgit2 (v1.9.4, git logic, object model, pack files)
    |       aros_time.c   -- mbedtls_ms_time() (second resolution)
    |       aros_mman.c   -- honest malloc+read mmap()/munmap() emulation
    |       aros_posix_shims.c -- getpwuid_r()/getsid()/pread()/pwrite()
+   |       aros_realpath.c -- realpath() via Lock()/NameFromLock() (AROS's
+   |                        native realpath() is declared but broken)
+   |       aros_path_shims.c -- shared "./"-prefix stripping, since AROS's
+   |                        own Unix->AmigaDOS path translation isn't
+   |                        active for this project's binaries either
    |
    +-- src/ (agit-specific code: PAT handling, CLI -- not started yet;
          examples/lg2 from the libgit2 submodule is today's integration
@@ -69,10 +86,14 @@ instructions.
 
 ## TODO
 
-- Verify `lg2 clone` actually completes end-to-end on real AROS
-  hardware or VirtualBox (build/link is done and cross-verified; the
-  on-device run itself is the next open item -- see
-  `doc/Building.md`'s "Testing lg2 on AROS")
+- Verify `lg2 init`/`lg2 clone` actually complete end-to-end on real
+  AROS hardware or VirtualBox now that both the broken-`realpath()` fix
+  (`src/aros_realpath.c`) and the `./`-prefix-stripping fix
+  (`src/aros_path_shims.c`, `patches/libgit2-aros-path-normalize.patch`)
+  are in place (build/link is done and cross-verified, including
+  isolated `test_aros_realpath`/`test_aros_mkdir` checks; the on-device
+  run itself is the next open item -- see `doc/Building.md`'s "Testing
+  lg2 on AROS")
 - Confirm DNS resolution (`src/aros_dns.c`, `gethostbyname()`-backed)
   actually succeeds against a real nameserver in the target AROS
   network config, not just at the link level

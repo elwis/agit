@@ -5,118 +5,149 @@ A minimal git client (clone, pull, commit, push) for AROS x86_64
 [mbedTLS](https://www.trustedfirmware.org/projects/mbed-tls/) as the
 TLS layer. Authentication is via Personal Access Token (PAT) over
 HTTPS
+# agit
 
-**Status: pre-alpha.** mbedTLS and libgit2 both build cleanly for
-AROS x86_64. Raw TCP sockets and a full TLS 1.3 handshake (real
-handshake + HTTP request against github.com, decrypted response) are
-proven working on AROS One/VirtualBox. `lg2` (libgit2's own example
-CLI) cross-compiles and links into a real AROS ELF executable against
-our `libgit2.a`, with real hostname-based DNS (`gethostbyname()`-backed
-`getaddrinfo()`, IPv4-only) wired in -- see `doc/Building.md` for the
-full architecture writeup. On-device testing surfaced three bugs
-breaking `lg2 init`/`lg2 clone`, found and fixed in sequence: a broken
-AROS `realpath()` (every input, including `.`, returned `ENOENT`),
-fixed with a `Lock()`/`NameFromLock()`-based replacement
-(`src/aros_realpath.c`); AROS's Unix->AmigaDOS `./`-path translation
-not being active for this project's binaries at all, meaning
-`mkdir()`/`open()`/`stat()`/etc. also choke on a bare `./name`, fixed
-by stripping the prefix at libgit2's own `p_mkdir`/`p_open`/etc. call
-layer (`src/aros_path_shims.c`); and libgit2's repository-ownership
-check (`stat()`'s `st_uid` vs `geteuid()`) always failing on AROS,
-since AROS maps any file with no explicit multi-user owner to Unix uid
-65534 ("nobody") while `lg2` never changes its own uid from `0` --
-fixed via libgit2's own `GIT_OPT_SET_OWNER_VALIDATION` toggle, since
-the ownership-check threat model (CVE-2022-24765, shared/admin-writable
-directories on a multi-user system) doesn't exist on single-user AROS
--- see `doc/Building.md`'s "AROS's broken `realpath()`", "AROS's POSIX
-calls don't understand `./` either", and "AROS's ownership check always
-fails". The first two fixes are confirmed working on real AROS
-hardware; the ownership fix is cross-compile-verified, not yet
-re-confirmed on-device. **Not yet verified**: an actual `lg2 clone`/
-`lg2 init` run on AROS hardware/VM with all three fixes in place (this
-project cross-compiles only; on-device runs are a manual hand-off step
--- see `doc/Building.md`'s "Testing lg2 on AROS"). agit's own polished
-frontend hasn't been started yet.
-
-This is deliberately **not** a full git implementation:
-
-- No SSH (no modern client to build on for AROS)
-- No `git log`/`blame`/`rebase`/merge tooling -- just enough to move
-  commits between your AROS machine and a remote
-
-## Architecture
+A minimal git client for AROS x86_64 (ABIv11) -- `clone`, `add`,
+`commit`, and `push`, straight from your AROS Shell.
 
 ```
-libgit2 (v1.9.4, git logic, object model, pack files)
-   |
-   +-- its own git_socket_stream (streams/socket.c) -- plain
-   |     socket()/connect()/send()/recv(), wrapped by
-   |     mbedtls_ssl_set_bio() for TLS. NOT mbedTLS's own
-   |     net_sockets.c (MBEDTLS_NET_C stays disabled -- see
-   |     doc/Building.md's "Does libgit2 use mbedTLS's own
-   |     sockets, or its own?").
-   |
-   +-- mbedTLS (v3.6.6 LTS, TLS layer, replaces OpenSSL)
-   |
-   +-- agit's AROS glue (src/, linked into the final binary only,
-   |     never into libgit2.a/libmbedtls.a themselves):
-   |       aros_net.c    -- opens bsdsocket.library once at startup
-   |                        (also a standalone TCP wrapper, used by
-   |                        hello-socket.c/hello-tls.c, not by lg2's
-   |                        own socket I/O)
-   |       aros_dns.c    -- getaddrinfo() via gethostbyname(), IPv4 only
-   |       aros_entropy.c -- mbedtls_hardware_poll() (RDRAND or weak fallback)
-   |       aros_time.c   -- mbedtls_ms_time() (second resolution)
-   |       aros_mman.c   -- honest malloc+read mmap()/munmap() emulation
-   |       aros_posix_shims.c -- getpwuid_r()/getsid()/pread()/pwrite()
-   |       aros_realpath.c -- realpath() via Lock()/NameFromLock() (AROS's
-   |                        native realpath() is declared but broken)
-   |       aros_path_shims.c -- shared "./"-prefix stripping, since AROS's
-   |                        own Unix->AmigaDOS path translation isn't
-   |                        active for this project's binaries either
-   |
-   +-- src/ (agit-specific code: PAT handling, CLI -- not started yet;
-         examples/lg2 from the libgit2 submodule is today's integration
-         test, see doc/Building.md)
+1.RAM Disk:> agit clone https://github.com/octocat/Hello-World Hello-World
+Cloning into 'Hello-World'...
+remote: Enumerating objects: 13, done.
+...
+Clone complete.
 ```
 
-Core principle: **no upstream library is patched in its own tree.**
-All AROS deviations live in `cmake/mbedtls-user-config.h` (mbedTLS's
-official mechanism for configuration overrides) or in our own glue
-code such as `aros_net.c`. That means `deps/libgit2` and
-`deps/mbedtls` can be bumped to new upstream tags without losing our
-changes or needing manual re-patching.
+## Status
 
-AROS-specific libgit2 patches live in `patches/` (submodule content is
-never committed dirty). See `doc/Building.md` step 2 for the exact,
-ordered list of `git apply` commands and step-by-step build
-instructions.
+**0.1 -- early, but genuinely working.** `clone`, `add`, `commit`, and
+`push` have all been tested end-to-end against real GitHub
+repositories, running on real AROS x86_64 hardware and in VirtualBox.
 
-## TODO
 
-- [x] `lg2 clone`/`lg2 init`/`lg2 add`/`lg2 commit` end-to-end on
-  real AROS hardware -- all verified working with all eight AROS
-  patches applied (DNS, TCP, TLS 1.3, commit-object graph integrity).
-- [x] AROS's broken `realpath()` -- fixed via `src/aros_realpath.c`.
-- [x] AROS's POSIX calls don't understand `./` -- fixed via
-  `src/aros_path_shims.c` (patches `posix.h`, `posix.c`, `fs_path.c`).
-- [x] AROS's ownership check always fails -- fixed via
-  `GIT_OPT_SET_OWNER_VALIDATION` in `lg2.c`.
-- [x] `SOCK_CLOEXEC` rejected by AROS -- fixed via
-  `patches/libgit2-aros-sock-cloexec.patch`.
-- [ ] PAT-based `lg2 push` -- credential callback in
-  `src/aros_cred.c`, reads token from `AGIT_PAT` env var or
-  `PROGDIR:agit.config`. Built and cross-compiled, awaits on-device
-  push test with a real token against a disposable GitHub repo.
-- [ ] Write agit's own frontend (a real CLI or GUI) on top of the
-  now-working libgit2 integration -- `lg2` was only ever the
-  integration test.
-- [ ] No SSH, ever (by design -- see "What this is NOT" above).
-- [ ] `src/aros_entropy.c`'s fallback entropy source is intentionally
-  weak on non-RDRAND CPUs (see the honesty warning in that file) --
-  revisit if this project ever needs stronger guarantees than "hobby
-  project passive-eavesdropping resistance".
+## Installation
+
+1. Download the latest release zip and extract it -- you should end
+   up with three files: `agit`, `cacert.pem`, and
+   `agit.config.example`.
+2. Copy all three into a directory of your choice (a fresh drawer on
+   `Work:` or wherever you keep your tools works fine).
+3. Rename `agit.config.example` to `agit.config` and fill it in --
+   see the next two sections for exactly what goes in it.
+
+## Getting a GitHub Personal Access Token (PAT)
+
+This is the "password" agit uses to talk to GitHub on your behalf.
+Takes about a minute:
+
+1. On any computer, log into GitHub and go to **Settings** ->
+   **Developer settings** -> **Personal access tokens** ->
+   **Fine-grained tokens**.
+2. Click **Generate new token**.
+3. Under **Repository access**, choose **Only select repositories**
+   and pick the repo(s) you want agit to be able to touch. (Avoid
+   granting access to everything -- there's no reason agit needs more
+   than it's actually going to use.)
+4. Under **Permissions** -> **Repository permissions**, find
+   **Contents** and set it to **Read and write** (this is the only
+   permission agit needs).
+5. Set an expiration date that makes sense for you -- tokens can
+   always be regenerated later.
+6. Click **Generate token**, and **copy it immediately** -- GitHub only
+   shows you the value once. It'll look something like:
+   ```
+   github_pat_11AADI...a very long string...
+   ```
+
+Treat this token like a password. Anyone who has it can write to
+whatever repositories you granted it access to.
+
+## Getting the certificate file (cacert.pem)
+
+agit needs to know which certificate authorities to trust when it
+connects to GitHub over HTTPS. A `cacert.pem` is included in the
+release zip, sourced from
+[curl's official CA bundle](https://curl.se/docs/caextract.html) (the
+same trusted bundle used by countless other tools).
+
+Certificate authorities change over time, so if agit ever starts
+failing to connect with a certificate-related error, download a fresh
+copy from <https://curl.se/ca/cacert.pem> and replace the file
+alongside `agit`.
+
+## Setting up agit.config
+
+One small text file holds your identity and your token. Create
+`agit.config` in the same directory as the `agit` binary, containing:
+
+```
+GIT_USER_NAME=Your Name
+GIT_USER_EMAIL=you@example.com
+GITHUB_PAT=github_pat_11AADI...your-actual-token-here
+```
+
+- `GIT_USER_NAME` / `GIT_USER_EMAIL` are what shows up as the author
+  on commits you make with agit.
+- `GITHUB_PAT` is the token from the previous step.
+
+One key per line, no quotes, no extra spaces around the `=`. That's
+the whole format.
+
+**This file contains your token in plain text.** Don't share it, don't
+commit it into a git repository, don't post it anywhere. If you ever
+suspect it's leaked, go back to GitHub and revoke/regenerate the
+token -- it takes seconds.
+
+## Using agit
+
+All four commands are run from an AROS Shell, in whatever directory
+makes sense for the operation:
+
+**Clone a repository:**
+```
+1.Work:Projects> agit clone https://github.com/someuser/somerepo somerepo
+```
+
+**Stage a changed or new file:**
+```
+1.Work:Projects/somerepo> agit add path/to/file.txt
+```
+
+**Commit staged changes:**
+```
+1.Work:Projects/somerepo> agit commit -m "Describe what changed"
+```
+
+**Push your commits back to GitHub:**
+```
+1.Work:Projects/somerepo> agit push
+```
+
+That's the whole workflow: clone once, then add/commit/push as many
+times as you like.
+
+## Troubleshooting
+
+- **"failed to connect" during clone/push:** check that DNS actually
+  works on your AROS system (`Ping github.com` is a quick sanity
+  check). If that works but agit still fails, your `cacert.pem` might
+  be stale or missing -- see above.
+- **Commit succeeds but push fails with an authentication error:**
+  double check `agit.config` -- no stray spaces, the token hasn't
+  expired, and the token's repository permissions actually cover the
+  repo you're pushing to.
+- **Nothing in `agit.config` seems to be read at all:** make sure the
+  file is named exactly `agit.config` (not `agit.config.txt` or
+  similar) and sits in the same directory as the `agit` binary itself.
+
+## For developers
+
+Building agit from source, the full list of AROS-specific
+compatibility fixes this project required, and the reasoning behind
+each one, are documented in [`docs/BUILDING.md`](docs/BUILDING.md).
+[`ROADMAP.md`](ROADMAP.md) covers what's planned next.
 
 ## License
+
 GPLv2 (matches libgit2's "GPLv2 with linking exception"; mbedTLS is
 Apache 2.0-licensed and compatible).

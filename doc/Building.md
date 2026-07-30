@@ -203,6 +203,32 @@ it's missing, rather than erroring -- so this fails quietly (TLS
 handshakes reject the server certificate) rather than loudly if you
 ever remove that runtime call.
 
+## 6. Build agit (M1 skeleton)
+
+Our own-branded CLI (`agit`, not `lg2`) is a standalone binary built
+from `src/agit.c` plus the same AROS glue files `lg2` uses. Its build
+is independent of libgit2's cmake system -- no patch needed:
+
+```bash
+mkdir build-agit && cd build-agit
+
+cmake .. \
+    -DCMAKE_TOOLCHAIN_FILE=$(pwd)/../cmake/aros-x86_64.cmake
+
+cmake --build . -j$(nproc)
+cd ..
+```
+
+This produces `build-agit/agit`. The `CMakeLists.txt` at the repo root
+handles include paths, links against the pre-built `build-libgit2/libgit2.a`
+and the three mbedTLS `.a` files, and pulls in `-lpthread` from the
+AROS sysroot (libgit2's `.a` carries unresolved pthread symbols even
+with `THREADSAFE=OFF`, resolved at final executable link time).
+
+M1 only validates that the binary builds and can read
+`PROGDIR:agit.config`. No git operations are implemented yet -- see
+`ROADMAP.md` for M2-M4.
+
 ## Does libgit2 use mbedTLS's own sockets, or its own? (why DNS was solvable)
 
 Before touching DNS at all, this needed answering, since it decides

@@ -9,4 +9,6 @@ int aros_cred_acquire_cb(git_credential **out,
                          unsigned int allowed_types,
                          void *payload);
 
+char *aros_get_config(const char *key);
+
 #endif

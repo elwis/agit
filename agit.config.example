@@ -1,10 +1,15 @@
-# agit credential configuration
+# agit configuration
 #
-# Place this file as PROGDIR:agit.config (next to the lg2/agit binary)
+# Place this file as PROGDIR:agit.config (next to the agit binary)
 # or as agit.config in the current working directory. The file is
 # gitignored (see .gitignore) -- never commit a real token.
 #
-# Copy this example and replace the placeholder below with your
-# GitHub Personal Access Token (classic, with repo scope).
+# Copy this example and replace the placeholders below.
 #
+# Required: GitHub Personal Access Token (classic, with repo scope).
+# Also read from the AGIT_PAT environment variable if set.
 # GITHUB_PAT=github_pat_your_token_here
+#
+# Required: identity for commits (git commit --author)
+# GIT_USER_NAME=Your Name
+# GIT_USER_EMAIL=your.email@example.com

@@ -4,22 +4,24 @@
 #include <stdlib.h>
 #include <string.h>
 
-static char *read_pat_from_file(void)
+static char *read_config_value(const char *key)
 {
     static const char *paths[] = {
         "PROGDIR:agit.config",
         "agit.config",
         NULL
     };
+    size_t klen;
     int i;
+
+    if (!key)
+        return NULL;
+    klen = strlen(key);
 
     for (i = 0; paths[i]; i++)
     {
         FILE *f;
         char line[512];
-        char *pat = NULL;
-        const char prefix[] = "GITHUB_PAT=";
-        size_t plen = strlen(prefix);
 
         f = fopen(paths[i], "r");
         if (!f)
@@ -27,28 +29,46 @@ static char *read_pat_from_file(void)
 
         while (fgets(line, sizeof(line), f))
         {
-            if (strncmp(line, prefix, plen) == 0)
-            {
-                size_t vlen = strlen(line + plen);
+            char *val;
+            size_t vlen;
 
-                if (vlen > 0 && line[plen + vlen - 1] == '\n')
-                    vlen--;
-                pat = malloc(vlen + 1);
-                if (pat)
-                {
-                    memcpy(pat, line + plen, vlen);
-                    pat[vlen] = '\0';
-                }
-                break;
+            if (strncmp(line, key, klen) != 0)
+                continue;
+            if (line[klen] != '=')
+                continue;
+
+            vlen = strlen(line + klen + 1);
+            if (vlen > 0 && line[klen + 1 + vlen - 1] == '\n')
+                vlen--;
+            val = malloc(vlen + 1);
+            if (val)
+            {
+                memcpy(val, line + klen + 1, vlen);
+                val[vlen] = '\0';
             }
+            fclose(f);
+            return val;
         }
 
         fclose(f);
-        if (pat)
-            return pat;
     }
 
     return NULL;
+}
+
+char *aros_get_config(const char *key)
+{
+    if (!key)
+        return NULL;
+
+    if (strcmp(key, "GITHUB_PAT") == 0)
+    {
+        const char *env = getenv("AGIT_PAT");
+        if (env)
+            return strdup(env);
+    }
+
+    return read_config_value(key);
 }
 
 int aros_cred_acquire_cb(git_credential **out,
@@ -57,8 +77,7 @@ int aros_cred_acquire_cb(git_credential **out,
                          unsigned int allowed_types,
                          void *payload)
 {
-    const char *pat;
-    char *pat_from_file = NULL;
+    char *pat;
     int ret;
 
     (void)url;
@@ -68,13 +87,7 @@ int aros_cred_acquire_cb(git_credential **out,
     if (!(allowed_types & GIT_CREDENTIAL_USERPASS_PLAINTEXT))
         return -1;
 
-    pat = getenv("AGIT_PAT");
-    if (!pat)
-    {
-        pat_from_file = read_pat_from_file();
-        pat = pat_from_file;
-    }
-
+    pat = aros_get_config("GITHUB_PAT");
     if (!pat)
     {
         git_error_set(GIT_ERROR_NET,
@@ -83,6 +96,6 @@ int aros_cred_acquire_cb(git_credential **out,
     }
 
     ret = git_credential_userpass_plaintext_new(out, "token", pat);
-    free(pat_from_file);
+    free(pat);
     return ret;
 }

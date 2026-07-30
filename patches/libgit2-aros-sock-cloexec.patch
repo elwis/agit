@@ -1,0 +1,19 @@
+diff --git a/src/libgit2/streams/socket.c b/src/libgit2/streams/socket.c
+index b851e7eed..277e37096 100644
+--- a/src/libgit2/streams/socket.c
++++ b/src/libgit2/streams/socket.c
+@@ -190,7 +190,13 @@ static int socket_connect(git_stream *stream)
+ 	}
+ 
+ 	for (p = info; p != NULL; p = p->ai_next) {
+-		s = socket(p->ai_family, p->ai_socktype | SOCK_CLOEXEC, p->ai_protocol);
++		s = socket(p->ai_family,
++#ifdef __AROS__
++		           p->ai_socktype,
++#else
++		           p->ai_socktype | SOCK_CLOEXEC,
++#endif
++		           p->ai_protocol);
+ 
+ 		/* Enable TCP keepalive to detect dead connections */
+ 		if (s != INVALID_SOCKET && p->ai_family == AF_INET) {

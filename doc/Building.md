@@ -54,6 +54,7 @@ git apply patches/libgit2-aros-lg2-init.patch    --directory=deps/libgit2
 git apply patches/libgit2-aros-lg2-cmake.patch   --directory=deps/libgit2
 git apply patches/libgit2-aros-realpath.patch    --directory=deps/libgit2
 git apply patches/libgit2-aros-path-normalize.patch --directory=deps/libgit2
+git apply patches/libgit2-aros-sock-cloexec.patch  --directory=deps/libgit2
 ```
 
 To undo all of them later (e.g. before bumping the libgit2 submodule
@@ -531,6 +532,67 @@ order is still verified not to matter (empirically re-tested: applying
 succeed) -- the two patches' hunks land in different, non-overlapping
 regions of the same files.
 
+### `SOCK_CLOEXEC` stripping (patch #8)
+
+`streams/socket.c` passes the BSD extension flag `SOCK_CLOEXEC`
+(`SOCK_STREAM | 0x10000000`) to `socket()` -- a common pattern on
+Linux and modern BSDs. AROS's `bsdsocket.library` does not support
+`SOCK_CLOEXEC` in the type argument and returns -1 with no errno set,
+silently failing socket creation. The fix strips `SOCK_CLOEXEC` from
+the type argument under `#ifdef __AROS__`, restoring the plain
+`SOCK_STREAM` that the AROS library expects.
+
+**Confirmed on real AROS hardware**: `socket(SOCK_STREAM | SOCK_CLOEXEC)`
+fails immediately; `socket(SOCK_STREAM)` succeeds. See
+`tests/test_aros_sock_cloexec.c` for the isolated reproducer.
+
+**All three of the above, confirmed fixed on real AROS hardware**: paths
+now resolve correctly (e.g. to `"RAM Disk:bengt"`), and `lg2 init`/
+`lg2 clone` get past directory creation and path resolution entirely.
+
+## AROS's ownership check always fails (`repository path '...' is not owned by current user`)
+
+The next error hit on-device, past both fixes above: `git_repository_open_ext()`
+(reached by both `lg2 init` and `lg2 clone`) validates that the repo
+and worktree directories are "owned by the current user" --
+`git_fs_path_owner_is()` (`src/util/fs_path.c`) compares `stat()`'s
+`st_uid` against `geteuid()`. This check was added upstream for a real
+multi-user threat (CVE-2022-24765): a shared or admin-writable
+directory containing a repo with hostile hooks/config, opened
+unknowingly by a different user on the same machine. AROS has no such
+threat model -- it's a single-user OS, the same reasoning already used
+to disable `MBEDTLS_TIMING_C` (see `cmake/mbedtls-user-config.h`).
+
+**Root cause, read from AROS's actual source, not assumed:** AROS's
+`stat()`/`lstat()` (`compiler/crt/posixc/__stat.c`'s `__id_a2u()`)
+deliberately maps AmigaDOS's `fib_OwnerUID == 0` -- the default for
+any file that was never given an explicit multi-user owner, true of
+virtually everything on a typical AROS filesystem, including
+`RAM Disk:` -- to Unix uid `65534` ("nobody"), specifically so an
+unassigned AmigaDOS owner is never mistaken for Unix root. Meanwhile
+`getuid()`/`geteuid()` (`compiler/crt/posixc/getuid.c`/`geteuid.c`)
+only ever change via explicit `setuid()`/`seteuid()` calls
+(`compiler/crt/posixc/setuid.c`/`seteuid.c`), which `lg2` never makes,
+so they stay at their zero-initialized default, `0`. `0 != 65534`:
+this comparison can never succeed on AROS as configured here, for any
+file, regardless of who "owns" it in any meaningful sense. Not a bug
+in AROS or in this build -- AROS's mapping is a deliberate, sensible
+choice on its own terms -- just an assumption (comparable, meaningful
+per-file ownership) that doesn't hold on a single-user OS with no real
+ownership model at all.
+
+**The fix:** `git_libgit2_opts(GIT_OPT_SET_OWNER_VALIDATION, 0)`,
+called in `examples/lg2.c` right after the CA-cert-path call (same
+`#ifdef __AROS__` block, via `patches/libgit2-aros-lg2-init.patch`).
+This is libgit2's own first-class, maintained toggle for exactly this
+check -- `GIT_OPT_SET_OWNER_VALIDATION` sets
+`git_repository__validate_ownership` (`src/libgit2/settings.c`), the
+same flag `git_repository_open_ext()` checks before ever calling
+`validate_ownership()` (`src/libgit2/repository.c`) -- not a bypass or
+a suppressed error, the documented, intended way to disable this
+specific check on platforms where its threat model doesn't apply
+(`include/git2/common.h`'s `opts()` documentation lists it explicitly).
+
 ## Why we patch this way (submodules + patches/ + shims, never edit vendor code)
 
 - `deps/libgit2` and `deps/mbedtls` are pinned git submodules. We
@@ -541,7 +603,7 @@ regions of the same files.
   `cmake/mbedtls-user-config.h`, using mbedTLS's own officially
   documented `MBEDTLS_USER_CONFIG_FILE` mechanism -- zero source
   changes needed.
-- Source-level changes to libgit2 (seven so far: `posix.c` needing
+- Source-level changes to libgit2 (eight so far: `posix.c` needing
   `<proto/socket.h>` for `select()`/`WaitSelect()`; `streams/socket.c`
   and `src/util/posix.h` each needing one `#include` line for our own
   `getaddrinfo()`/`getpwuid_r()`/`getsid()`/`pread()`/`pwrite()`
@@ -550,12 +612,14 @@ regions of the same files.
   below); `src/util/unix/posix.h`, `src/util/posix.c`,
   `src/util/fs_path.c`, and `src/util/win32/posix.h` needing the
   `./`-stripping wrapper described in "AROS's POSIX calls don't
-  understand `./` either" below; `examples/lg2.c` needing three small
-  `#ifdef __AROS__` blocks to open `bsdsocket.library` and set the CA
-  cert path; and `examples/CMakeLists.txt` needing to link our glue
-  code into `lg2`) are each captured as a tracked `.patch` file in
-  `patches/`, applied explicitly as a build step (see step 2), never
-  silently baked into the submodule checkout.
+  understand `./` either" below; `streams/socket.c` needing to strip
+  `SOCK_CLOEXEC` from the `socket()` type argument (AROS's
+  `bsdsocket.library` rejects the flag); `examples/lg2.c` needing
+  three small `#ifdef __AROS__` blocks to open `bsdsocket.library` and
+  set the CA cert path; and `examples/CMakeLists.txt` needing to link
+  our glue code into `lg2`) are each captured as a tracked `.patch`
+  file in `patches/`, applied explicitly as a build step (see step 2),
+  never silently baked into the submodule checkout.
 - Missing OS facilities entirely (no `sys/mman.h`, no
   `getaddrinfo()`/`getpwuid_r()`/`getsid()`/`pread()`/`pwrite()` at
   all) get a header shim under `src/aros-shims/` plus a real,
@@ -632,6 +696,26 @@ regions of the same files.
   -- see "AROS's POSIX calls don't understand `./` either" above for
   the full list and reasoning. Not fixed, since neither is currently
   reachable with a `./`-prefixed path for `lg2`/agit's actual usage.
+- **`p_poll()` `revents` operator-precedence bug** (`src/util/posix.c`,
+  lines 363-366): the `select()`-based `p_poll()` implementation's
+  `revents` computation:
+  ```c
+  fds[i].revents = 0 |
+      FD_ISSET(fds[i].fd, &read_fds) ? POLLIN : 0 |
+      FD_ISSET(fds[i].fd, &write_fds) ? POLLOUT : 0 |
+      FD_ISSET(fds[i].fd, &except_fds) ? POLLPRI : 0;
+  ```
+  Due to `|` binding tighter than `?:`, this parses as a chained
+  ternary (`(0|read) ? POLLIN : (0|write) ? POLLOUT : (0|except) ? POLLPRI : 0`)
+  rather than three independent ORs. Consequence: at most one of
+  POLLIN/POLLOUT/POLLPRI is ever set (the first matching in read-then-
+  write-then-except order), POLLERR and POLLHUP are never set, and
+  multi-fd polls compute incorrect results. Currently unreachable:
+  `connect_with_timeout()` (the sole `p_poll()` call site in the
+  blocking `lg2` code path) only polls a single fd for POLLOUT, which
+  the broken expression happens to compute correctly for that specific
+  case. Noted here so any future code that adds a non-blocking connect
+  or multi-fd poll knows to fix this first.
 - **No SSH.** PAT-over-HTTPS only, by design (see main README's
   "What this is NOT" section).
 
@@ -717,7 +801,17 @@ every failure mode hit so far:
 
 Builds happen only on this Pop!_OS machine (cross-compilation only --
 nothing here ever runs VirtualBox/QEMU or drives an AROS guest
-directly). Testing on the actual target is a manual hand-off:
+directly). Testing on the actual target is a manual hand-off.
+
+**Status as of this writing:** the `realpath()` fix and the `./`-prefix
+path-normalization fix are both confirmed working on real AROS
+hardware (paths resolve correctly, e.g. to `"RAM Disk:bengt"`, and
+directory creation/path resolution no longer fail). The next error hit
+was the ownership-validation check (see "AROS's ownership check always
+fails" above), now also fixed -- **not yet re-confirmed on-device.**
+Steps 0's `test_realpath`/`test_aros_realpath`/`test_aros_mkdir`
+probes don't need re-running unless something in that layer regressed;
+the open item is steps 1-5 below with the ownership fix included.
 
 0. **Isolate both fixes first**, the same way the bugs themselves were
    isolated -- don't jump straight to the full `lg2` binary. Rebuild
@@ -796,9 +890,15 @@ directly). Testing on the actual target is a manual hand-off:
    (the compound dot forms reaching `p_realpath()`, not `p_mkdir()`)
    -- see "AROS's broken `realpath()`" above. Both need to work; they
    were two separate bugs found via two separate rounds of empirical
-   testing, not one. `octocat/Hello-World` is a tiny, stable, public
-   GitHub repo -- good for fast iteration; avoid cloning this repo or
-   anything large for the same reason.
+   testing, not one. Past directory creation and path resolution, both
+   commands (and `lg2 clone`) also exercise the ownership-validation
+   fix (see "AROS's ownership check always fails" above) -- watch
+   specifically for `repository path '...' is not owned by current
+   user` disappearing; that error means `GIT_OPT_SET_OWNER_VALIDATION`
+   either didn't take effect or the reasoning behind it was wrong.
+   `octocat/Hello-World` is a tiny, stable, public GitHub repo -- good
+   for fast iteration; avoid cloning this repo or anything large for
+   the same reason.
 4. Verify with `lg2 log` inside the resulting `Hello-World` directory,
    and/or inspect `Hello-World/.git` actually contains real pack/ref
    data -- not just "the command didn't crash." For `lg2 init`, check

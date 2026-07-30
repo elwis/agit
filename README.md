@@ -13,22 +13,30 @@ proven working on AROS One/VirtualBox. `lg2` (libgit2's own example
 CLI) cross-compiles and links into a real AROS ELF executable against
 our `libgit2.a`, with real hostname-based DNS (`gethostbyname()`-backed
 `getaddrinfo()`, IPv4-only) wired in -- see `doc/Building.md` for the
-full architecture writeup. On-device testing surfaced two related but
-distinct bugs breaking `lg2 init`/`lg2 clone`'s directory setup: a
-broken AROS `realpath()` (every input, including `.`, returned
-`ENOENT`), fixed with a `Lock()`/`NameFromLock()`-based replacement
-(`src/aros_realpath.c`); and, confirmed empirically afterward, AROS's
-Unix->AmigaDOS `./`-path translation not being active for this
-project's binaries at all, meaning `mkdir()`/`open()`/`stat()`/etc.
-also choke on a bare `./name` -- fixed by stripping the prefix at
-libgit2's own `p_mkdir`/`p_open`/etc. call layer (`src/aros_path_shims.c`,
-see `doc/Building.md`'s "AROS's broken `realpath()`" and "AROS's POSIX
-calls don't understand `./` either"). Both fixes are cross-compile and
-isolated-test verified, not yet re-confirmed on-device. **Not yet
-verified**: an actual `lg2 clone`/`lg2 init` run on AROS hardware/VM
-with both fixes in place (this project cross-compiles only; on-device
-runs are a manual hand-off step -- see `doc/Building.md`'s "Testing
-lg2 on AROS"). agit's own polished frontend hasn't been started yet.
+full architecture writeup. On-device testing surfaced three bugs
+breaking `lg2 init`/`lg2 clone`, found and fixed in sequence: a broken
+AROS `realpath()` (every input, including `.`, returned `ENOENT`),
+fixed with a `Lock()`/`NameFromLock()`-based replacement
+(`src/aros_realpath.c`); AROS's Unix->AmigaDOS `./`-path translation
+not being active for this project's binaries at all, meaning
+`mkdir()`/`open()`/`stat()`/etc. also choke on a bare `./name`, fixed
+by stripping the prefix at libgit2's own `p_mkdir`/`p_open`/etc. call
+layer (`src/aros_path_shims.c`); and libgit2's repository-ownership
+check (`stat()`'s `st_uid` vs `geteuid()`) always failing on AROS,
+since AROS maps any file with no explicit multi-user owner to Unix uid
+65534 ("nobody") while `lg2` never changes its own uid from `0` --
+fixed via libgit2's own `GIT_OPT_SET_OWNER_VALIDATION` toggle, since
+the ownership-check threat model (CVE-2022-24765, shared/admin-writable
+directories on a multi-user system) doesn't exist on single-user AROS
+-- see `doc/Building.md`'s "AROS's broken `realpath()`", "AROS's POSIX
+calls don't understand `./` either", and "AROS's ownership check always
+fails". The first two fixes are confirmed working on real AROS
+hardware; the ownership fix is cross-compile-verified, not yet
+re-confirmed on-device. **Not yet verified**: an actual `lg2 clone`/
+`lg2 init` run on AROS hardware/VM with all three fixes in place (this
+project cross-compiles only; on-device runs are a manual hand-off step
+-- see `doc/Building.md`'s "Testing lg2 on AROS"). agit's own polished
+frontend hasn't been started yet.
 
 This is deliberately **not** a full git implementation:
 
@@ -87,13 +95,13 @@ instructions.
 ## TODO
 
 - Verify `lg2 init`/`lg2 clone` actually complete end-to-end on real
-  AROS hardware or VirtualBox now that both the broken-`realpath()` fix
-  (`src/aros_realpath.c`) and the `./`-prefix-stripping fix
-  (`src/aros_path_shims.c`, `patches/libgit2-aros-path-normalize.patch`)
-  are in place (build/link is done and cross-verified, including
-  isolated `test_aros_realpath`/`test_aros_mkdir` checks; the on-device
-  run itself is the next open item -- see `doc/Building.md`'s "Testing
-  lg2 on AROS")
+  AROS hardware or VirtualBox now that the broken-`realpath()` fix and
+  the `./`-prefix-stripping fix are confirmed working on-device *and*
+  the ownership-validation fix (`GIT_OPT_SET_OWNER_VALIDATION`,
+  `examples/lg2.c` via `patches/libgit2-aros-lg2-init.patch`) is in
+  place (build/link is done and cross-verified; the ownership fix
+  specifically is the next thing needing on-device re-confirmation --
+  see `doc/Building.md`'s "Testing lg2 on AROS")
 - Confirm DNS resolution (`src/aros_dns.c`, `gethostbyname()`-backed)
   actually succeeds against a real nameserver in the target AROS
   network config, not just at the link level

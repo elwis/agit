@@ -1,5 +1,5 @@
 diff --git a/examples/lg2.c b/examples/lg2.c
-index 7946bc215..8d4617694 100644
+index 7946bc215..40dcfa04f 100644
 --- a/examples/lg2.c
 +++ b/examples/lg2.c
 @@ -1,5 +1,9 @@
@@ -12,7 +12,7 @@ index 7946bc215..8d4617694 100644
  /* This part is not strictly libgit2-dependent, but you can use this
   * as a starting point for a git-like tool */
  
-@@ -76,8 +80,36 @@ int main(int argc, char **argv)
+@@ -76,8 +80,73 @@ int main(int argc, char **argv)
  	if (argc < 2)
  		usage(argv[0]);
  
@@ -44,12 +44,49 @@ index 7946bc215..8d4617694 100644
 +	 * "Fetch the CA certificate bundle").
 +	 */
 +	git_libgit2_opts(GIT_OPT_SET_SSL_CERT_LOCATIONS, "PROGDIR:cacert.pem", NULL);
++
++	/*
++	 * git_repository_open_ext() (reached via both `lg2 init` and
++	 * `lg2 clone`) validates that the repo/worktree directory is
++	 * "owned by the current user" (git_fs_path_owner_is(), fs_path.c)
++	 * by comparing stat()'s st_uid against geteuid() -- a check added
++	 * upstream (CVE-2022-24765) against a real multi-user threat: a
++	 * shared/admin-writable directory containing a repo with hostile
++	 * hooks/config, opened unknowingly by another user on the same
++	 * machine. AROS has no such threat model: it's a single-user OS,
++	 * same reasoning already used to disable MBEDTLS_TIMING_C (see
++	 * cmake/mbedtls-user-config.h).
++	 *
++	 * The check fails unconditionally here regardless: AROS's
++	 * stat()/lstat() (compiler/crt/posixc/__stat.c's __id_a2u())
++	 * deliberately maps AmigaDOS's fib_OwnerUID == 0 -- the default
++	 * for any file that was never given an explicit multi-user
++	 * owner, true of virtually everything on a typical AROS
++	 * filesystem including RAM Disk: -- to Unix uid 65534 ("nobody"),
++	 * specifically so an unassigned owner is never mistaken for
++	 * root. Meanwhile getuid()/geteuid() only change via explicit
++	 * setuid()/seteuid() calls, which lg2 never makes, so they stay
++	 * at their zero-initialized default, 0. 0 != 65534: the
++	 * comparison this check relies on can never succeed on AROS as
++	 * configured here, for any file, regardless of who "owns" it in
++	 * any meaningful sense -- not a bug in AROS or in this build, just
++	 * an assumption (comparable, meaningful per-file ownership) that
++	 * doesn't hold on a single-user OS with no real ownership model.
++	 *
++	 * GIT_OPT_SET_OWNER_VALIDATION is libgit2's own first-class,
++	 * maintained toggle for exactly this (settings.c, gating
++	 * git_repository__validate_ownership before validate_ownership()
++	 * is ever called in repository.c) -- not a bypass of the check,
++	 * the intended way to disable it on platforms where it doesn't
++	 * apply.
++	 */
++	git_libgit2_opts(GIT_OPT_SET_OWNER_VALIDATION, 0);
 +#endif
 +
  	for (args.pos = 1; args.pos < args.argc; ++args.pos) {
  		char *a = args.argv[args.pos];
  
-@@ -120,5 +152,9 @@ shutdown:
+@@ -120,5 +189,9 @@ shutdown:
  	git_repository_free(repo);
  	git_libgit2_shutdown();
  

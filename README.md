@@ -94,25 +94,28 @@ instructions.
 
 ## TODO
 
-- Verify `lg2 init`/`lg2 clone` actually complete end-to-end on real
-  AROS hardware or VirtualBox now that the broken-`realpath()` fix and
-  the `./`-prefix-stripping fix are confirmed working on-device *and*
-  the ownership-validation fix (`GIT_OPT_SET_OWNER_VALIDATION`,
-  `examples/lg2.c` via `patches/libgit2-aros-lg2-init.patch`) is in
-  place (build/link is done and cross-verified; the ownership fix
-  specifically is the next thing needing on-device re-confirmation --
-  see `doc/Building.md`'s "Testing lg2 on AROS")
-- Confirm DNS resolution (`src/aros_dns.c`, `gethostbyname()`-backed)
-  actually succeeds against a real nameserver in the target AROS
-  network config, not just at the link level
-- Write agit's own frontend (PAT handling, a real CLI or GUI) on top
-  of the now-working libgit2 integration -- `lg2` was only ever the
-  integration test
-- No SSH, ever (by design -- see "What this is NOT" above)
-- `src/aros_entropy.c`'s fallback entropy source is intentionally weak
-  on non-RDRAND CPUs (see the honesty warning in that file) --
+- [x] `lg2 clone`/`lg2 init`/`lg2 add`/`lg2 commit` end-to-end on
+  real AROS hardware -- all verified working with all eight AROS
+  patches applied (DNS, TCP, TLS 1.3, commit-object graph integrity).
+- [x] AROS's broken `realpath()` -- fixed via `src/aros_realpath.c`.
+- [x] AROS's POSIX calls don't understand `./` -- fixed via
+  `src/aros_path_shims.c` (patches `posix.h`, `posix.c`, `fs_path.c`).
+- [x] AROS's ownership check always fails -- fixed via
+  `GIT_OPT_SET_OWNER_VALIDATION` in `lg2.c`.
+- [x] `SOCK_CLOEXEC` rejected by AROS -- fixed via
+  `patches/libgit2-aros-sock-cloexec.patch`.
+- [ ] PAT-based `lg2 push` -- credential callback in
+  `src/aros_cred.c`, reads token from `AGIT_PAT` env var or
+  `PROGDIR:agit.config`. Built and cross-compiled, awaits on-device
+  push test with a real token against a disposable GitHub repo.
+- [ ] Write agit's own frontend (a real CLI or GUI) on top of the
+  now-working libgit2 integration -- `lg2` was only ever the
+  integration test.
+- [ ] No SSH, ever (by design -- see "What this is NOT" above).
+- [ ] `src/aros_entropy.c`'s fallback entropy source is intentionally
+  weak on non-RDRAND CPUs (see the honesty warning in that file) --
   revisit if this project ever needs stronger guarantees than "hobby
-  project passive-eavesdropping resistance"
+  project passive-eavesdropping resistance".
 
 ## License
 GPLv2 (matches libgit2's "GPLv2 with linking exception"; mbedTLS is

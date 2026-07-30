@@ -1,0 +1,57 @@
+diff --git a/examples/push.c b/examples/push.c
+index 5113eed39..e2ba24fe4 100644
+--- a/examples/push.c
++++ b/examples/push.c
+@@ -14,6 +14,10 @@
+ 
+ #include "common.h"
+ 
++#ifdef __AROS__
++#include "aros_cred.h"
++#endif
++
+ /**
+  * This example demonstrates the libgit2 push API to roughly
+  * simulate `git push`.
+@@ -34,28 +38,38 @@ int lg2_push(git_repository *repo, int argc, char **argv) {
+ 	git_push_options options;
+ 	git_remote_callbacks callbacks;
+ 	git_remote* remote = NULL;
+-	char *refspec = "refs/heads/master";
++	git_reference *head = NULL;
++	char *refspec;
+ 	const git_strarray refspecs = {
+ 		&refspec,
+ 		1
+ 	};
+ 
+-    /* Validate args */
+ 	if (argc > 1) {
+-		printf ("USAGE: %s\n\nsorry, no arguments supported yet\n", argv[0]);
++		printf("USAGE: %s\n", argv[0]);
+ 		return -1;
+ 	}
+ 
++	/* Derive refspec from current HEAD */
++	check_lg2(git_repository_head(&head, repo), "Could not get HEAD", NULL);
++	refspec = (char *)git_reference_name(head);
++
+ 	check_lg2(git_remote_lookup(&remote, repo, "origin" ), "Unable to lookup remote", NULL);
+ 	
+ 	check_lg2(git_remote_init_callbacks(&callbacks, GIT_REMOTE_CALLBACKS_VERSION), "Error initializing remote callbacks", NULL);
++#ifdef __AROS__
++	callbacks.credentials = aros_cred_acquire_cb;
++#else
+ 	callbacks.credentials = cred_acquire_cb;
++#endif
+ 
+ 	check_lg2(git_push_options_init(&options, GIT_PUSH_OPTIONS_VERSION ), "Error initializing push", NULL);
+ 	options.callbacks = callbacks;
+ 
+ 	check_lg2(git_remote_push(remote, &refspecs, &options), "Error pushing", NULL);
+ 
++	git_reference_free(head);
++
+ 	printf("pushed\n");
+ 	return 0;
+ }

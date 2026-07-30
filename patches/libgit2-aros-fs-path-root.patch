@@ -1,0 +1,33 @@
+diff --git a/src/util/fs_path.c b/src/util/fs_path.c
+index 5b00b1b40..b5a32ea2b 100644
+--- a/src/util/fs_path.c
++++ b/src/util/fs_path.c
+@@ -302,6 +302,28 @@ int git_fs_path_root(const char *path)
+ 
+ 	if (path[offset] == '\\')
+ 		return offset;
++#elif defined(__AROS__)
++	/*
++	 * AROS volume/device names contain a colon (e.g. "RAM Disk:",
++	 * "PROGDIR:", "Work:"). Unlike DOS drive letters which are always
++	 * a single letter at [0]-[1], AROS volume names can have any
++	 * length. Find the first colon and treat everything up to and
++	 * including it as the root.
++	 */
++	else {
++		const char *p = path;
++
++		while (*p && *p != '/' && *p != ':')
++			p++;
++		if (*p == ':') {
++			offset = (int)(p - path) + 1;
++
++			if (path[offset] == '/')
++				return offset;
++
++			return offset;
++		}
++	}
+ #endif
+ 
+ 	if (path[offset] == '/')

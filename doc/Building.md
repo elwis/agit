@@ -55,6 +55,9 @@ git apply patches/libgit2-aros-lg2-cmake.patch   --directory=deps/libgit2
 git apply patches/libgit2-aros-realpath.patch    --directory=deps/libgit2
 git apply patches/libgit2-aros-path-normalize.patch --directory=deps/libgit2
 git apply patches/libgit2-aros-sock-cloexec.patch  --directory=deps/libgit2
+git apply patches/libgit2-aros-cred.patch          --directory=deps/libgit2
+git apply patches/libgit2-aros-fs-path-root.patch  --directory=deps/libgit2
+git apply patches/libgit2-aros-push-head.patch    --directory=deps/libgit2
 ```
 
 To undo all of them later (e.g. before bumping the libgit2 submodule
@@ -546,7 +549,40 @@ the type argument under `#ifdef __AROS__`, restoring the plain
 fails immediately; `socket(SOCK_STREAM)` succeeds. See
 `tests/test_aros_sock_cloexec.c` for the isolated reproducer.
 
-**All three of the above, confirmed fixed on real AROS hardware**: paths
+### PAT credential callback for `lg2 push` (patch #9)
+
+`examples/push.c` already exists and already calls `cred_acquire_cb`
+(the interactive-prompt callback from `examples/common.c`). For
+AROS's headless/VM environment there is no interactive terminal, and
+the project's auth model is PAT-only by design. Patch #9 swaps in
+`aros_cred_acquire_cb` (defined in `src/aros_cred.c`, linked via the
+cmake patch) which reads the token from the `AGIT_PAT` environment
+variable or `PROGDIR:agit.config` and calls
+`git_credential_userpass_plaintext_new()` -- no interactive fallback.
+
+See `src/aros_cred.c`, `src/aros_cred.h`, and `agit.config.example`
+for the implementation and config-file format.
+
+### AROS path-root detection (patch #10)
+
+`git_fs_path_root()` (`src/util/fs_path.c`) recognizes only POSIX
+`/`-prefixed paths and DOS `<letter>:` drive letters. AROS paths like
+`RAM Disk:repo/assets/foo.txt` have a volume-name colon at a variable
+position (not just [0]-[1]), so the function returned -1 (not rooted),
+causing `git_fs_path_join_unrooted()` to prepend the workdir base a
+second time. Patch #10 adds an `#elif defined(__AROS__)` branch that
+scans for the first colon before any `/` and treats it as the volume
+root, fixing the path duplication in checkout subdirectory creation.
+
+### Dynamic branch refspec from HEAD (patch #11)
+
+`examples/push.c` had `refs/heads/master` hardcoded as the refspec.
+Modern GitHub uses `main` as the default branch. Patch #11 replaces
+the hardcoded string with `git_repository_head()` to derive the
+branch name from the current HEAD reference — it works for any branch
+name, not just `master`/`main`.
+
+**All six of the above, confirmed fixed on real AROS hardware**: paths
 now resolve correctly (e.g. to `"RAM Disk:bengt"`), and `lg2 init`/
 `lg2 clone` get past directory creation and path resolution entirely.
 
@@ -603,7 +639,7 @@ specific check on platforms where its threat model doesn't apply
   `cmake/mbedtls-user-config.h`, using mbedTLS's own officially
   documented `MBEDTLS_USER_CONFIG_FILE` mechanism -- zero source
   changes needed.
-- Source-level changes to libgit2 (eight so far: `posix.c` needing
+- Source-level changes to libgit2 (eleven so far: `posix.c` needing
   `<proto/socket.h>` for `select()`/`WaitSelect()`; `streams/socket.c`
   and `src/util/posix.h` each needing one `#include` line for our own
   `getaddrinfo()`/`getpwuid_r()`/`getsid()`/`pread()`/`pwrite()`
@@ -614,7 +650,13 @@ specific check on platforms where its threat model doesn't apply
   `./`-stripping wrapper described in "AROS's POSIX calls don't
   understand `./` either" below; `streams/socket.c` needing to strip
   `SOCK_CLOEXEC` from the `socket()` type argument (AROS's
-  `bsdsocket.library` rejects the flag); `examples/lg2.c` needing
+  `bsdsocket.library` rejects the flag);   `examples/push.c` needing
+  to replace the interactive-prompt credential callback with
+  `aros_cred_acquire_cb` (reads PAT from `AGIT_PAT` or
+  `PROGDIR:agit.config`) and replace the hardcoded `refs/heads/master`
+  refspec with a dynamic lookup from HEAD; `src/util/fs_path.c` needing AROS
+  volume-name root detection for paths like `RAM Disk:repo/foo`
+  (colons not at a fixed position); `examples/lg2.c` needing
   three small `#ifdef __AROS__` blocks to open `bsdsocket.library` and
   set the CA cert path; and `examples/CMakeLists.txt` needing to link
   our glue code into `lg2`) are each captured as a tracked `.patch`

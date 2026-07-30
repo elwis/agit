@@ -1,0 +1,27 @@
+diff --git a/examples/push.c b/examples/push.c
+index 5113eed39..259caa550 100644
+--- a/examples/push.c
++++ b/examples/push.c
+@@ -14,6 +14,10 @@
+ 
+ #include "common.h"
+ 
++#ifdef __AROS__
++#include "aros_cred.h"
++#endif
++
+ /**
+  * This example demonstrates the libgit2 push API to roughly
+  * simulate `git push`.
+@@ -49,7 +53,11 @@ int lg2_push(git_repository *repo, int argc, char **argv) {
+ 	check_lg2(git_remote_lookup(&remote, repo, "origin" ), "Unable to lookup remote", NULL);
+ 	
+ 	check_lg2(git_remote_init_callbacks(&callbacks, GIT_REMOTE_CALLBACKS_VERSION), "Error initializing remote callbacks", NULL);
++#ifdef __AROS__
++	callbacks.credentials = aros_cred_acquire_cb;
++#else
+ 	callbacks.credentials = cred_acquire_cb;
++#endif
+ 
+ 	check_lg2(git_push_options_init(&options, GIT_PUSH_OPTIONS_VERSION ), "Error initializing push", NULL);
+ 	options.callbacks = callbacks;

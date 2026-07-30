@@ -22,6 +22,7 @@ index 986daae59..adcee0d17 100644
 +		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_posix_shims.c
 +		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_realpath.c
 +		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_path_shims.c
++		${CMAKE_CURRENT_SOURCE_DIR}/../../../src/aros_cred.c
 +	)
 +endif()
 +
